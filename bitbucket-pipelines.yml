@@ -1,0 +1,140 @@
+image: python:3.11
+
+pipelines:
+  default:
+    - parallel:
+        - step:
+            name: Build, Push Docker Image, and Deploy to Lambda
+            caches:
+              - pip
+            script:
+              - echo "Setting up AWS CLI..."
+              - pip install awscli --upgrade --user
+              - export PATH=$HOME/.local/bin:$PATH  # Add AWS CLI installation directory to PATH
+              # Build the Docker image
+              - docker build -t $AWS_DEV_ECR_REPOSITORY .
+              - docker images
+              - docker tag $AWS_DEV_ECR_REPOSITORY:latest $AWS_DEV_ECR_REPOSITORY:${BITBUCKET_BRANCH}-${BITBUCKET_BUILD_NUMBER}
+              - docker images
+              # aws configuration
+              - aws --version
+              - aws configure set aws_access_key_id $AWS_DEV_ACCESS_KEY_ID
+              - aws configure set aws_secret_access_key $AWS_DEV_SECRET_ACCESS_KEY
+              - aws configure set default.region $AWS_DEV_DEFAULT_REGION
+              - aws configure list
+              - echo "Logging into AWS ECR..."
+              - aws ecr get-login-password --region ${AWS_DEV_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_DEV_ACCOUNT_ID}.dkr.ecr.${AWS_DEV_DEFAULT_REGION}.amazonaws.com
+              - echo "Pushing Docker image to ECR..."
+              - pipe: atlassian/aws-ecr-push-image:2.4.2
+                variables:
+                  AWS_ACCESS_KEY_ID: $AWS_DEV_ACCESS_KEY_ID
+                  AWS_SECRET_ACCESS_KEY: $AWS_DEV_SECRET_ACCESS_KEY
+                  AWS_DEFAULT_REGION: $AWS_DEV_DEFAULT_REGION
+                  IMAGE_NAME: "${AWS_DEV_ECR_REPOSITORY}"
+                  TAGS: "latest ${BITBUCKET_BRANCH}-${BITBUCKET_BUILD_NUMBER}"
+              - echo "Deploying image in Lambda function (DEV)"
+              - echo "Deploying to Lambda Function:" $AWS_DEV_LAMBDA_FUNCTION
+              - pipe: atlassian/aws-lambda-deploy:1.11.1
+                variables:
+                  AWS_ACCESS_KEY_ID: $AWS_DEV_ACCESS_KEY_ID
+                  AWS_SECRET_ACCESS_KEY: $AWS_DEV_SECRET_ACCESS_KEY
+                  AWS_DEFAULT_REGION: $AWS_DEV_DEFAULT_REGION
+                  FUNCTION_NAME: $AWS_DEV_LAMBDA_FUNCTION
+                  COMMAND: "update"
+                  ALIAS: "DEV"
+                  IMAGE_URI: '${AWS_DEV_ACCOUNT_ID}.dkr.ecr.${AWS_DEV_DEFAULT_REGION}.amazonaws.com/$AWS_DEV_ECR_REPOSITORY:${BITBUCKET_BRANCH}-${BITBUCKET_BUILD_NUMBER}'
+        - step:
+            name: Security Scan
+            script:
+              - pipe: atlassian/git-secrets-scan:0.5.1
+
+  # This section will trigger only when a PR is raised to the production branch
+  pull-requests:
+    'production':
+      - step:
+          name: Build, Push Docker Image, and Deploy to Lambda (Production)
+          caches:
+            - pip
+          script:
+            - echo "Setting up AWS CLI..."
+            - pip install awscli --upgrade --user
+            - export PATH=$HOME/.local/bin:$PATH  # Add AWS CLI installation directory to PATH
+            # Build the Docker image
+            - docker build -t $AWS_PROD_ECR_REPOSITORY .
+            - docker images
+            - docker tag $AWS_PROD_ECR_REPOSITORY:latest $AWS_PROD_ECR_REPOSITORY:${BITBUCKET_BRANCH}-${BITBUCKET_BUILD_NUMBER}
+            - docker images
+            # aws configuration
+            - aws --version
+            - aws configure set aws_access_key_id $AWS_PROD_ACCESS_KEY_ID
+            - aws configure set aws_secret_access_key $AWS_PROD_SECRET_ACCESS_KEY
+            - aws configure set default.region $AWS_PROD_DEFAULT_REGION
+            - aws configure list
+            - echo "Logging into AWS ECR..."
+            - aws ecr get-login-password --region ${AWS_PROD_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_PROD_ACCOUNT_ID}.dkr.ecr.${AWS_PROD_DEFAULT_REGION}.amazonaws.com
+            - echo "Pushing Docker image to ECR..."
+            - pipe: atlassian/aws-ecr-push-image:2.4.2
+              variables:
+                AWS_ACCESS_KEY_ID: $AWS_PROD_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY: $AWS_PROD_SECRET_ACCESS_KEY
+                AWS_DEFAULT_REGION: $AWS_PROD_DEFAULT_REGION
+                IMAGE_NAME: "${AWS_PROD_ECR_REPOSITORY}"
+                TAGS: "latest ${BITBUCKET_BRANCH}-${BITBUCKET_BUILD_NUMBER}"
+            - echo "Deploying image in Lambda function (PROD)"
+            - echo "Deploying to Lambda Function:" $AWS_PROD_LAMBDA_FUNCTION
+            - pipe: atlassian/aws-lambda-deploy:1.11.1
+              variables:
+                AWS_ACCESS_KEY_ID: $AWS_PROD_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY: $AWS_PROD_SECRET_ACCESS_KEY
+                AWS_DEFAULT_REGION: $AWS_PROD_DEFAULT_REGION
+                FUNCTION_NAME: $AWS_PROD_LAMBDA_FUNCTION
+                COMMAND: "update"
+                ALIAS: "PROD"
+                IMAGE_URI: '${AWS_PROD_ACCOUNT_ID}.dkr.ecr.${AWS_PROD_DEFAULT_REGION}.amazonaws.com/$AWS_PROD_ECR_REPOSITORY:${BITBUCKET_BRANCH}-${BITBUCKET_BUILD_NUMBER}'
+
+  branches:
+    production:
+      - step:
+          name: Build, Push Docker Image, and Deploy to Lambda (Production)
+          caches:
+            - pip
+          script:
+            - echo "Setting up AWS CLI..."
+            - pip install awscli --upgrade --user
+            - export PATH=$HOME/.local/bin:$PATH  # Add AWS CLI installation directory to PATH
+            # Build the Docker image
+            - docker build -t $AWS_PROD_ECR_REPOSITORY .
+            - docker images
+            - docker tag $AWS_PROD_ECR_REPOSITORY:latest $AWS_PROD_ECR_REPOSITORY:${BITBUCKET_BRANCH}-${BITBUCKET_BUILD_NUMBER}
+            - docker images
+            # aws configuration
+            - aws --version
+            - aws configure set aws_access_key_id $AWS_PROD_ACCESS_KEY_ID
+            - aws configure set aws_secret_access_key $AWS_PROD_SECRET_ACCESS_KEY
+            - aws configure set default.region $AWS_PROD_DEFAULT_REGION
+            - aws configure list
+            - echo "Logging into AWS ECR..."
+            - aws ecr get-login-password --region ${AWS_PROD_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_PROD_ACCOUNT_ID}.dkr.ecr.${AWS_PROD_DEFAULT_REGION}.amazonaws.com
+            - echo "Pushing Docker image to ECR..."
+            - pipe: atlassian/aws-ecr-push-image:2.4.2
+              variables:
+                AWS_ACCESS_KEY_ID: $AWS_PROD_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY: $AWS_PROD_SECRET_ACCESS_KEY
+                AWS_DEFAULT_REGION: $AWS_PROD_DEFAULT_REGION
+                IMAGE_NAME: "${AWS_PROD_ECR_REPOSITORY}"
+                TAGS: "latest ${BITBUCKET_BRANCH}-${BITBUCKET_BUILD_NUMBER}"
+            - echo "Deploying image in Lambda function (PROD)"
+            - echo "Deploying to Lambda Function:" $AWS_PROD_LAMBDA_FUNCTION
+            - pipe: atlassian/aws-lambda-deploy:1.11.1
+              variables:
+                AWS_ACCESS_KEY_ID: $AWS_PROD_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY: $AWS_PROD_SECRET_ACCESS_KEY
+                AWS_DEFAULT_REGION: $AWS_PROD_DEFAULT_REGION
+                FUNCTION_NAME: $AWS_PROD_LAMBDA_FUNCTION
+                COMMAND: "update"
+                ALIAS: "PROD"
+                IMAGE_URI: '${AWS_PROD_ACCOUNT_ID}.dkr.ecr.${AWS_PROD_DEFAULT_REGION}.amazonaws.com/$AWS_PROD_ECR_REPOSITORY:${BITBUCKET_BRANCH}-${BITBUCKET_BUILD_NUMBER}'
+    
+definitions:
+  caches:
+    pip: /root/.cache/pip
